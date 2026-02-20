@@ -1,0 +1,51 @@
+# docker-compose.yml
+# Levanta toda la aplicación con un solo comando: docker compose up --build
+
+services:
+
+  # ── BASE DE DATOS (PostgreSQL) ──
+  postgres:
+    image: postgres:16-alpine        # Imagen oficial de PostgreSQL
+    container_name: vet-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       vetclinic   # Nombre de la base de datos
+      POSTGRES_USER:     vetuser     # Usuario
+      POSTGRES_PASSWORD: vetpass     # Contraseña
+    ports:
+      - "5432:5432"                  # Puerto para conectar desde fuera
+    volumes:
+      - datos-postgres:/var/lib/postgresql/data  # Para que los datos persistan
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vetuser -d vetclinic"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── BACKEND (FastAPI) ──
+  backend:
+    build: ./backend                 # Construye con el Dockerfile de la carpeta backend/
+    container_name: vet-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"                  # La API estará en http://localhost:8000
+    environment:
+      # Sobreescribimos la URL de la base de datos para apuntar al contenedor de postgres
+      DATABASE_URL: postgresql://vetuser:vetpass@postgres:5432/vetclinic
+    depends_on:
+      postgres:
+        condition: service_healthy   # Espera a que postgres esté listo antes de arrancar
+
+  # ── FRONTEND (Nginx sirviendo el HTML) ──
+  frontend:
+    image: nginx:alpine
+    container_name: vet-web
+    ports:
+      - "3000:80"                    # El frontend estará en http://localhost:3000
+    volumes:
+      - ./frontend:/usr/share/nginx/html  # Sirve los archivos de la carpeta frontend/
+    depends_on:
+      - backend
+
+volumes:
+  datos-postgres:   # Volumen donde se guardan los datos de PostgreSQL
